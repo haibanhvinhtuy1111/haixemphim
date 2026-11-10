@@ -17,9 +17,43 @@ function shape(v, d = 0) {
 }
 
 export async function GET(req) {
-  const path =
-    new URL(req.url).searchParams.get("path") ||
-    "/danh-sach/phim-moi-cap-nhat?page=1";
+  const { searchParams } = new URL(req.url);
+  const embed = searchParams.get("embed");
+
+  // Chế độ Proxy cho link_embed (gắn Referer vsmov.com và bỏ X-Frame-Options)
+  if (embed) {
+    try {
+      const target = new URL(embed);
+      const r = await fetch(target.toString(), {
+        headers: {
+          "User-Agent": UA,
+          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          Referer: "https://vsmov.com/",
+          Origin: "https://vsmov.com"
+        },
+        cache: "no-store",
+        signal: AbortSignal.timeout(6000)
+      });
+      let html = await r.text();
+      const baseTag = `<base href="${target.origin}/">`;
+      if (/<head[^>]*>/i.test(html)) {
+        html = html.replace(/<head[^>]*>/i, (m) => `${m}${baseTag}`);
+      } else {
+        html = `${baseTag}${html}`;
+      }
+      return new Response(html, {
+        status: r.status,
+        headers: { "content-type": "text/html; charset=utf-8" }
+      });
+    } catch {
+      return new Response(
+        `<html><body style="background:#111;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;text-align:center;margin:0;padding:20px;"><div>Máy chủ <b>s3.streamvsmov.com</b> hiện đang bảo trì hoặc từ chối kết nối.<br/><br/>Vui lòng bấm chọn <b>Server khác</b> ở ngay bên dưới khung xem phim.</div></body></html>`,
+        { headers: { "content-type": "text/html; charset=utf-8" } }
+      );
+    }
+  }
+
+  const path = searchParams.get("path") || "/danh-sach/phim-moi-cap-nhat?page=1";
   if (!path.startsWith("/")) return new Response("bad path", { status: 400 });
 
   const url = (process.env.API_BASE || "https://vsmov.com/api") + path;
