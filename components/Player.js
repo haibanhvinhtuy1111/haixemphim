@@ -6,7 +6,7 @@ export default function Player({ servers = [] }) {
   const [ei, setEi] = useState(0);
   const videoRef = useRef(null);
 
-  const list = servers[si]?.server_data || [];
+ const list = servers[si]?.server_data || [];
   const ep = list[ei];
   const m3u8 = ep?.link_m3u8;
   const embed = ep?.link_embed;
