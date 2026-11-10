@@ -12,8 +12,9 @@ const TYPES = [
 ];
 
 export default async function Home({ searchParams }) {
-  const type = searchParams?.type || "phim-moi-cap-nhat";
-  const page = Math.max(1, parseInt(searchParams?.page || "1", 10) || 1);
+  const sp = await searchParams;
+  const type = sp?.type || "phim-moi-cap-nhat";
+  const page = Math.max(1, parseInt(sp?.page || "1", 10) || 1);
   const { items, totalPages } = await getList(type, page);
   const q = (p) => `/?type=${type}&page=${p}`;
 
@@ -23,26 +24,51 @@ export default async function Home({ searchParams }) {
 
       <form action="/tim-kiem" className="card">
         <div className="searchbox">
-          <input className="input" name="keyword" placeholder="Nhập tên phim" aria-label="Tên phim" />
+          <input
+            className="input"
+            name="keyword"
+            placeholder="Nhập tên phim"
+            aria-label="Tên phim"
+          />
           <button className="btn" type="submit">Tìm kiếm</button>
         </div>
         <div className="chips">
           {TYPES.map(([k, label]) => (
-            <Link key={k} href={`/?type=${k}`} className={`chip ${k === type ? "on" : ""}`}>{label}</Link>
+            <Link
+              key={k}
+              href={`/?type=${k}`}
+              className={`chip ${k === type ? "on" : ""}`}
+            >
+              {label}
+            </Link>
           ))}
         </div>
       </form>
 
       {items.length === 0 ? (
-        <div className="notice">Chưa tải được danh sách phim. Thử lại sau ít phút.</div>
+        <div className="notice">
+          Chưa tải được danh sách phim. Thử lại sau ít phút.
+        </div>
       ) : (
         <>
           <h2>{TYPES.find((t) => t[0] === type)?.[1] || "Phim"}</h2>
-          <div className="grid">{items.map((m) => <MovieCard key={m.slug} m={m} />)}</div>
+          <div className="grid">
+            {items.map((m) => (
+              <MovieCard key={m.slug} m={m} />
+            ))}
+          </div>
           <div className="pager">
-            {page > 1 ? <Link href={q(page - 1)}>Trang trước</Link> : <span className="dim">Trang trước</span>}
+            {page > 1 ? (
+              <Link href={q(page - 1)}>Trang trước</Link>
+            ) : (
+              <span className="dim">Trang trước</span>
+            )}
             <span>{page} / {totalPages}</span>
-            {page < totalPages ? <Link href={q(page + 1)}>Trang sau</Link> : <span className="dim">Trang sau</span>}
+            {page < totalPages ? (
+              <Link href={q(page + 1)}>Trang sau</Link>
+            ) : (
+              <span className="dim">Trang sau</span>
+            )}
           </div>
         </>
       )}
