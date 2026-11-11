@@ -16,38 +16,214 @@ function shape(v, d = 0) {
   return typeof v === "string" ? v.slice(0, 80) : v;
 }
 
+async function handleProxy(req, proxyUrl, refUrl) {
+  try {
+    const target = new URL(proxyUrl);
+    const ref = refUrl || `${target.origin}/`;
+    const refOrigin = new URL(ref).origin;
+    const reqOrigin = new URL(req.url).origin;
+
+    const reqHeaders = {
+      "User-Agent": UA,
+      Accept: req.headers.get("accept") || "*/*",
+      "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7",
+      Referer: ref,
+      Origin: refOrigin
+    };
+
+    const ctReq = req.headers.get("content-type");
+    if (ctReq) reqHeaders["Content-Type"] = ctReq;
+    const xrw = req.headers.get("x-requested-with");
+    if (xrw) reqHeaders["X-Requested-With"] = xrw;
+    const range = req.headers.get("range");
+    if (range) reqHeaders["Range"] = range;
+
+    const fetchOpts = {
+      method: req.method,
+      headers: reqHeaders,
+      cache: "no-store",
+      redirect: "follow",
+      signal: AbortSignal.timeout(10000)
+    };
+
+    if (req.method !== "GET" && req.method !== "HEAD") {
+      fetchOpts.body = await req.arrayBuffer();
+    }
+
+    const r = await fetch(target.toString(), fetchOpts);
+    const buf = await r.arrayBuffer();
+    const ct = r.headers.get("content-type") || "application/octet-stream";
+
+    // Kiểm tra nếu phản hồi là playlist .m3u8 (#EXTM3U) thì viết lại link con qua proxy
+    const headStr = new TextDecoder().decode(buf.slice(0, 16)).trimStart();
+    if (headStr.startsWith("#EXTM3U")) {
+      const baseForM3u8 = r.url || target.toString();
+      const text = new TextDecoder().decode(buf);
+      const rewritten = text
+        .split(/\r?\n/)
+        .map((line) => {
+          const trimmed = line.trim();
+          if (!trimmed) return line;
+          if (trimmed.startsWith("#")) {
+            return line.replace(/URI="([^"]+)"/g, (_, uri) => {
+              try {
+                const abs = new URL(uri, baseForM3u8).toString();
+                return `URI="${reqOrigin}/api/debug?proxy=${encodeURIComponent(abs)}&ref=${encodeURIComponent(ref)}"`;
+              } catch {
+                return `URI="${uri}"`;
+              }
+            });
+          }
+          try {
+            const abs = new URL(trimmed, baseForM3u8).toString();
+            return `${reqOrigin}/api/debug?proxy=${encodeURIComponent(abs)}&ref=${encodeURIComponent(ref)}`;
+          } catch {
+            return line;
+          }
+        })
+        .join("\n");
+
+      return new Response(rewritten, {
+        status: r.status,
+        headers: {
+          "content-type": "application/vnd.apple.mpegurl; charset=utf-8",
+          "access-control-allow-origin": "*"
+        }
+      });
+    }
+
+    const resHeaders = {
+      "content-type": ct,
+      "access-control-allow-origin": "*"
+    };
+    const cr = r.headers.get("content-range");
+    if (cr) resHeaders["content-range"] = cr;
+
+    return new Response(buf, { status: r.status, headers: resHeaders });
+  } catch (e) {
+    return new Response(JSON.stringify({ error: String(e) }), {
+      status: 502,
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+        "access-control-allow-origin": "*"
+      }
+    });
+  }
+}
+
+export async function POST(req) {
+  const { searchParams } = new URL(req.url);
+  const proxy = searchParams.get("proxy");
+  const ref = searchParams.get("ref");
+  if (proxy) return handleProxy(req, proxy, ref);
+  return new Response("Not allowed", { status: 405 });
+}
+
 export async function GET(req) {
   const { searchParams } = new URL(req.url);
-  const embed = searchParams.get("embed");
+  const proxy = searchParams.get("proxy");
+  const ref = searchParams.get("ref");
 
-  // Chế độ Proxy cho link_embed (gắn Referer vsmov.com và bỏ X-Frame-Options)
+  if (proxy) {
+    return handleProxy(req, proxy, ref);
+  }
+
+  const embed = searchParams.get("embed");
   if (embed) {
     try {
       const target = new URL(embed);
       const r = await fetch(target.toString(), {
         headers: {
           "User-Agent": UA,
-          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          Accept:
+            "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+          "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7",
           Referer: "https://vsmov.com/",
-          Origin: "https://vsmov.com"
+          "Sec-Fetch-Dest": "iframe",
+          "Sec-Fetch-Mode": "navigate",
+          "Sec-Fetch-Site": "cross-site"
         },
         cache: "no-store",
-        signal: AbortSignal.timeout(6000)
+        signal: AbortSignal.timeout(8000)
       });
+
       let html = await r.text();
-      const baseTag = `<base href="${target.origin}/">`;
-      if (/<head[^>]*>/i.test(html)) {
-        html = html.replace(/<head[^>]*>/i, (m) => `${m}${baseTag}`);
-      } else {
-        html = `${baseTag}${html}`;
+
+      const injectScript = `<script>
+(function() {
+  var TARGET_ORIGIN = ${JSON.stringify(target.origin)};
+  var TARGET_HREF = ${JSON.stringify(target.toString())};
+  var TARGET_PATH = ${JSON.stringify(target.pathname + target.search)};
+  var APP_ORIGIN = window.location.origin;
+
+  try {
+    history.replaceState(null, "", TARGET_PATH);
+  } catch (e) {}
+
+  try {
+    Object.defineProperty(document, "referrer", {
+      get: function() { return "https://vsmov.com/"; }
+    });
+  } catch (e) {}
+
+  var base = document.createElement("base");
+  base.href = TARGET_ORIGIN + "/";
+  (document.head || document.documentElement).appendChild(base);
+
+  function toProxy(u) {
+    try {
+      if (!u || typeof u !== "string") return u;
+      if (u.indexOf("blob:") === 0 || u.indexOf("data:") === 0) return u;
+      if (u.indexOf("/api/debug?") !== -1) return u;
+      var resolved = new URL(u, TARGET_HREF);
+      if (resolved.origin === APP_ORIGIN) {
+        var t = new URL(TARGET_ORIGIN);
+        resolved.protocol = t.protocol;
+        resolved.host = t.host;
       }
+      if (/jsdelivr\\.net|cdnjs\\.cloudflare\\.com|jwpcdn\\.com|googleapis\\.com/i.test(resolved.hostname)) {
+        return resolved.toString();
+      }
+      return APP_ORIGIN + "/api/debug?proxy=" + encodeURIComponent(resolved.toString()) + "&ref=" + encodeURIComponent(TARGET_HREF);
+    } catch (e) {
+      return u;
+    }
+  }
+
+  var origFetch = window.fetch;
+  if (origFetch) {
+    window.fetch = function(input, init) {
+      if (typeof input === "string") {
+        input = toProxy(input);
+      } else if (input && typeof input === "object" && input.url) {
+        input = new Request(toProxy(input.url), input);
+      }
+      return origFetch.call(this, input, init);
+    };
+  }
+
+  var origOpen = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function(method, url) {
+    var args = Array.prototype.slice.call(arguments);
+    args[1] = toProxy(String(url));
+    return origOpen.apply(this, args);
+  };
+})();
+</script>`;
+
+      if (/<head[^>]*>/i.test(html)) {
+        html = html.replace(/<head[^>]*>/i, (m) => `${m}${injectScript}`);
+      } else {
+        html = `${injectScript}${html}`;
+      }
+
       return new Response(html, {
         status: r.status,
         headers: { "content-type": "text/html; charset=utf-8" }
       });
     } catch {
       return new Response(
-        `<html><body style="background:#111;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;text-align:center;margin:0;padding:20px;"><div>Máy chủ <b>s3.streamvsmov.com</b> hiện đang bảo trì hoặc từ chối kết nối.<br/><br/>Vui lòng bấm chọn <b>Server khác</b> ở ngay bên dưới khung xem phim.</div></body></html>`,
+        `<html><body style="background:#111;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;text-align:center;margin:0;padding:20px;"><div>Máy chủ <b>s3.streamvsmov.com</b> hiện không phản hồi.<br/><br/>Vui lòng chọn <b>Server khác</b> ở bên dưới khung xem phim.</div></body></html>`,
         { headers: { "content-type": "text/html; charset=utf-8" } }
       );
     }
