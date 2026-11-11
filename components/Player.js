@@ -20,7 +20,8 @@ export default function Player({ servers = [] }) {
 
   const [sIdx, setSIdx] = useState(0);
   const [eIdx, setEIdx] = useState(0);
-  const [mode, setMode] = useState("auto"); // "auto" | "m3u8" | "embed"
+  const [mode, setMode] = useState("auto");
+  const [hideBurnIn, setHideBurnIn] = useState(false);
   const videoRef = useRef(null);
 
   const currentServer = validServers[sIdx] || validServers[0];
@@ -33,16 +34,19 @@ export default function Player({ servers = [] }) {
   const useM3u8 =
     mode === "m3u8" ? Boolean(m3u8Url) : mode === "embed" ? false : Boolean(m3u8Url);
 
+  // Tự động bật che quảng cáo in cứng nếu đang phát server của vsmov (không phải Bản Sạch)
+  const isCleanServer = String(currentServer?.server_name || "").includes("Bản Sạch");
+
   useEffect(() => {
     setMode("auto");
-  }, [sIdx, eIdx]);
+    setHideBurnIn(!isCleanServer);
+  }, [sIdx, eIdx, isCleanServer]);
 
   useEffect(() => {
     if (!useM3u8 || !m3u8Url || !videoRef.current) return;
     const video = videoRef.current;
     let hls;
 
-    // Nếu trình duyệt hỗ trợ HLS tự nhiên (Safari / iOS)
     if (video.canPlayType("application/vnd.apple.mpegurl")) {
       video.src = m3u8Url;
       return;
@@ -114,23 +118,67 @@ export default function Player({ servers = [] }) {
             Không tìm thấy link phát cho tập này.
           </div>
         )}
+
+        {/* Lớp phủ làm mờ/che dòng chữ vsbet ở mép trên và logo VSmov ở góc dưới phải khi video bị in cứng */}
+        {hideBurnIn && (
+          <>
+            <div
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                height: "14%",
+                background: "linear-gradient(to bottom, rgba(0,0,0,0.92) 60%, rgba(0,0,0,0))",
+                backdropFilter: "blur(10px)",
+                WebkitBackdropFilter: "blur(10px)",
+                pointerEvents: "none",
+                zIndex: 10
+              }}
+            />
+            <div
+              style={{
+                position: "absolute",
+                bottom: "7%",
+                right: "1.5%",
+                width: "14%",
+                height: "9%",
+                borderRadius: 6,
+                background: "rgba(15, 15, 15, 0.75)",
+                backdropFilter: "blur(12px)",
+                WebkitBackdropFilter: "blur(12px)",
+                pointerEvents: "none",
+                zIndex: 10
+              }}
+            />
+          </>
+        )}
       </div>
 
-      {/* Thanh đổi chế độ phát nếu tập phim có cả 2 link */}
-      {m3u8Url && embedUrl && (
-        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+      {/* Thanh công cụ chuyển đổi nhanh */}
+      <div className="chips" style={{ marginTop: 10 }}>
+        <button
+          type="button"
+          className={`chip ${hideBurnIn ? "active" : ""}`}
+          onClick={() => setHideBurnIn((v) => !v)}
+          style={{ cursor: "pointer" }}
+        >
+          {hideBurnIn ? "Đang bật: Che QC in cứng" : "Che QC in cứng (Tắt)"}
+        </button>
+
+        {m3u8Url && embedUrl && (
           <button
             type="button"
             className="chip"
             onClick={() => setMode(useM3u8 ? "embed" : "m3u8")}
             style={{ cursor: "pointer" }}
           >
-            Đang dùng: {useM3u8 ? "Trình phát M3U8" : "Trình phát Embed"} (Bấm để đổi)
+            Đổi trình phát ({useM3u8 ? "M3U8" : "Embed"})
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
-      {/* Chọn Server (nếu có nhiều server) */}
+      {/* Chọn Server */}
       {validServers.length > 1 && (
         <div className="chips" style={{ marginTop: 12 }}>
           {validServers.map((sv, i) => (
