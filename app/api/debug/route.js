@@ -54,7 +54,6 @@ async function handleProxy(req, proxyUrl, refUrl) {
     const buf = await r.arrayBuffer();
     const ct = r.headers.get("content-type") || "application/octet-stream";
 
-    // Kiểm tra nếu phản hồi là playlist .m3u8 (#EXTM3U) thì viết lại link con qua proxy
     const headStr = new TextDecoder().decode(buf.slice(0, 16)).trimStart();
     if (headStr.startsWith("#EXTM3U")) {
       const baseForM3u8 = r.url || target.toString();
@@ -169,6 +168,72 @@ export async function GET(req) {
   var base = document.createElement("base");
   base.href = TARGET_ORIGIN + "/";
   (document.head || document.documentElement).appendChild(base);
+
+  // CSS tự động ẩn toàn bộ logo / watermark của trình phát
+  var style = document.createElement("style");
+  style.textContent = [
+    '.jw-logo, .jw-logo-bar, .jw-controlbar-logo, .jw-rightclick-logo,',
+    '.vjs-logo, .vjs-brand-container, .art-layer-logo, .plyr__logo,',
+    '[class*="logo" i], [id*="logo" i], [class*="watermark" i], [id*="watermark" i],',
+    'a[href*="vsmov" i], img[src*="vsmov" i], img[src*="logo" i], img[alt*="vsmov" i], img[alt*="logo" i] {',
+    '  display: none !important;',
+    '  opacity: 0 !important;',
+    '  visibility: hidden !important;',
+    '  width: 0 !important;',
+    '  height: 0 !important;',
+    '  pointer-events: none !important;',
+    '}'
+  ].join("\\n");
+  (document.head || document.documentElement).appendChild(style);
+
+  // Quét và ẩn các thẻ ảnh/khối chứa logo được tạo động bằng JS
+  function removeLogos() {
+    var imgs = document.querySelectorAll("img");
+    for (var i = 0; i < imgs.length; i++) {
+      var img = imgs[i];
+      var src = (img.currentSrc || img.src || "").toLowerCase();
+      var cls = (img.className || "").toLowerCase();
+      var id = (img.id || "").toLowerCase();
+      if (cls.indexOf("thumb") !== -1 || cls.indexOf("preview") !== -1) continue;
+      var w = img.clientWidth || img.naturalWidth || 0;
+      var h = img.clientHeight || img.naturalHeight || 0;
+      if (
+        src.indexOf("logo") !== -1 ||
+        src.indexOf("vsmov") !== -1 ||
+        src.indexOf("watermark") !== -1 ||
+        cls.indexOf("logo") !== -1 ||
+        id.indexOf("logo") !== -1 ||
+        (w > 20 && w < 300 && h > 8 && h < 120)
+      ) {
+        img.style.setProperty("display", "none", "important");
+        if (img.parentElement && img.parentElement.tagName === "A") {
+          img.parentElement.style.setProperty("display", "none", "important");
+        }
+      }
+    }
+
+    var els = document.querySelectorAll("div, span, a");
+    for (var j = 0; j < els.length; j++) {
+      var el = els[j];
+      var clsEl = String(el.className || "").toLowerCase();
+      if (clsEl.indexOf("thumb") !== -1 || clsEl.indexOf("preview") !== -1) continue;
+      var bg = "";
+      try {
+        bg = (el.style.backgroundImage || window.getComputedStyle(el).backgroundImage || "").toLowerCase();
+      } catch (e) {}
+      if (
+        bg.indexOf("logo") !== -1 ||
+        bg.indexOf("vsmov") !== -1 ||
+        bg.indexOf("watermark") !== -1
+      ) {
+        el.style.setProperty("display", "none", "important");
+      }
+    }
+  }
+
+  setInterval(removeLogos, 400);
+  window.addEventListener("DOMContentLoaded", removeLogos);
+  window.addEventListener("load", removeLogos);
 
   function toProxy(u) {
     try {
