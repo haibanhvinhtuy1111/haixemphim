@@ -38,7 +38,7 @@ export default async function HomePage({ searchParams }) {
 
         <div className="card" style={{ padding: 16, marginBottom: 20 }}>
           <form
-            action="/tim-kiem"
+            action="/"
             method="GET"
             style={{ display: "flex", gap: 10, marginBottom: 12 }}
           >
@@ -73,7 +73,14 @@ export default async function HomePage({ searchParams }) {
           </div>
         ) : (
           <>
-            <div className="grid">
+            <div
+              className="grid"
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(165px, 1fr))",
+                gap: 16
+              }}
+            >
               {items.map((it, idx) => (
                 <MovieCard
                   key={it._id || it.slug || idx}
