@@ -169,13 +169,13 @@ export async function GET(req) {
   base.href = TARGET_ORIGIN + "/";
   (document.head || document.documentElement).appendChild(base);
 
-  // CSS tự động ẩn toàn bộ logo / watermark của trình phát
   var style = document.createElement("style");
   style.textContent = [
     '.jw-logo, .jw-logo-bar, .jw-controlbar-logo, .jw-rightclick-logo,',
     '.vjs-logo, .vjs-brand-container, .art-layer-logo, .plyr__logo,',
     '[class*="logo" i], [id*="logo" i], [class*="watermark" i], [id*="watermark" i],',
-    'a[href*="vsmov" i], img[src*="vsmov" i], img[src*="logo" i], img[alt*="vsmov" i], img[alt*="logo" i] {',
+    '[class*="marquee" i], [id*="marquee" i], [class*="banner" i], [id*="banner" i],',
+    'marquee, a[href*="vsmov" i], a[href*="vsbet" i], img[src*="vsmov" i], img[src*="logo" i] {',
     '  display: none !important;',
     '  opacity: 0 !important;',
     '  visibility: hidden !important;',
@@ -186,54 +186,54 @@ export async function GET(req) {
   ].join("\\n");
   (document.head || document.documentElement).appendChild(style);
 
-  // Quét và ẩn các thẻ ảnh/khối chứa logo được tạo động bằng JS
-  function removeLogos() {
-    var imgs = document.querySelectorAll("img");
+  var BAD_WORDS = ["vsbet", "vsmov", "cá cược", "ca cuoc", "nổ hũ", "no hu", "baccarat", "game bài", "nạp rút"];
+
+  function removeAdsAndLogos() {
+    var imgs = document.querySelectorAll("img, svg");
     for (var i = 0; i < imgs.length; i++) {
       var img = imgs[i];
       var src = (img.currentSrc || img.src || "").toLowerCase();
-      var cls = (img.className || "").toLowerCase();
-      var id = (img.id || "").toLowerCase();
+      var cls = String(img.className || "").toLowerCase();
       if (cls.indexOf("thumb") !== -1 || cls.indexOf("preview") !== -1) continue;
       var w = img.clientWidth || img.naturalWidth || 0;
       var h = img.clientHeight || img.naturalHeight || 0;
       if (
         src.indexOf("logo") !== -1 ||
         src.indexOf("vsmov") !== -1 ||
+        src.indexOf("vsbet") !== -1 ||
         src.indexOf("watermark") !== -1 ||
         cls.indexOf("logo") !== -1 ||
-        id.indexOf("logo") !== -1 ||
-        (w > 20 && w < 300 && h > 8 && h < 120)
+        (w > 20 && w < 320 && h > 8 && h < 120)
       ) {
         img.style.setProperty("display", "none", "important");
-        if (img.parentElement && img.parentElement.tagName === "A") {
-          img.parentElement.style.setProperty("display", "none", "important");
-        }
       }
     }
 
-    var els = document.querySelectorAll("div, span, a");
+    var els = document.querySelectorAll("div, span, p, a, marquee, b, strong");
     for (var j = 0; j < els.length; j++) {
       var el = els[j];
-      var clsEl = String(el.className || "").toLowerCase();
-      if (clsEl.indexOf("thumb") !== -1 || clsEl.indexOf("preview") !== -1) continue;
+      if (el.querySelector("video")) continue;
+      var txt = (el.innerText || el.textContent || "").toLowerCase();
+      for (var k = 0; k < BAD_WORDS.length; k++) {
+        if (txt.indexOf(BAD_WORDS[k]) !== -1 && txt.length < 300) {
+          el.style.setProperty("display", "none", "important");
+          el.style.setProperty("opacity", "0", "important");
+          break;
+        }
+      }
       var bg = "";
       try {
         bg = (el.style.backgroundImage || window.getComputedStyle(el).backgroundImage || "").toLowerCase();
       } catch (e) {}
-      if (
-        bg.indexOf("logo") !== -1 ||
-        bg.indexOf("vsmov") !== -1 ||
-        bg.indexOf("watermark") !== -1
-      ) {
+      if (bg.indexOf("logo") !== -1 || bg.indexOf("vsmov") !== -1 || bg.indexOf("vsbet") !== -1) {
         el.style.setProperty("display", "none", "important");
       }
     }
   }
 
-  setInterval(removeLogos, 400);
-  window.addEventListener("DOMContentLoaded", removeLogos);
-  window.addEventListener("load", removeLogos);
+  setInterval(removeAdsAndLogos, 350);
+  window.addEventListener("DOMContentLoaded", removeAdsAndLogos);
+  window.addEventListener("load", removeAdsAndLogos);
 
   function toProxy(u) {
     try {
